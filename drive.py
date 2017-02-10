@@ -11,8 +11,33 @@ import eventlet.wsgi
 from PIL import Image
 from flask import Flask
 from io import BytesIO
+import cv2
+from math import floor
 
 from keras.models import load_model
+
+def load_image(image, flip=False):
+    
+    #image = cv2.imread(path)
+    #Convert to RGB
+    image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)    
+    #Crop image, remove sky and the bottom part. Leave some of both for bumpy sections.
+    image = image[floor(image.shape[0]*0.2):floor(image.shape[0]*0.88),:,:]
+    #Lower resolution, still doesn't affect network's performance
+    #image = cv2.resize(image, (0,0), fx=0.5, fy=0.5)
+    image = cv2.resize(image, (200, 64)) 
+    #Randomly change brightness (Vivek's idea)    
+    image = cv2.cvtColor(image,cv2.COLOR_RGB2HSV)
+    random_bright = .25 + np.random.uniform()
+    image[:,:,2] = image[:,:,2]*random_bright
+    image = cv2.cvtColor(image,cv2.COLOR_HSV2RGB)
+    
+    #Flip image
+    if flip:
+        #image = np.asarray(image)[:,::-1,:]
+        image = cv2.flip(image, 1)
+    
+    return image
 
 sio = socketio.Server()
 app = Flask(__name__)
@@ -33,7 +58,10 @@ def telemetry(sid, data):
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
         image_array = np.asarray(image)
+        image_array = load_image(image_array)
+        #print (image_array.shape)        
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
+        #steering_angle = float(model.predict(np.reshape(image_array, (1, 200, 64, 3)), batch_size=1))
         throttle = 0.2
         print(steering_angle, throttle)
         send_control(steering_angle, throttle)
@@ -97,4 +125,4 @@ if __name__ == '__main__':
     app = socketio.Middleware(sio, app)
 
     # deploy as an eventlet WSGI server
-    eventlet.wsgi.server(eventlet.listen(('', 4567)), app)
+eventlet.wsgi.server(eventlet.listen(('', 4567)), app)
