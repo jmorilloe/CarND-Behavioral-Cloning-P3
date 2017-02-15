@@ -18,23 +18,16 @@ from keras.models import load_model
 
 def load_image(image, flip=False):
     
-    #image = cv2.imread(path)
-    #Convert to RGB
-    image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)    
-    #Crop image, remove sky and the bottom part. Leave some of both for bumpy sections.
+    #Crop image, remove sky (upper 20%) and the bottom part (%12). Leave some of both for bumpy sections.
     image = image[floor(image.shape[0]*0.2):floor(image.shape[0]*0.88),:,:]
-    #Lower resolution, still doesn't affect network's performance
-    #image = cv2.resize(image, (0,0), fx=0.5, fy=0.5)
+    #Resize image to the model's expected input shape
     image = cv2.resize(image, (200, 64)) 
-    #Randomly change brightness (Vivek's idea)    
-    image = cv2.cvtColor(image,cv2.COLOR_RGB2HSV)
-    random_bright = .25 + np.random.uniform()
-    image[:,:,2] = image[:,:,2]*random_bright
-    image = cv2.cvtColor(image,cv2.COLOR_HSV2RGB)
+    #Change color space to HSV and pick the S channel
+    image = cv2.cvtColor(image,cv2.COLOR_BGR2HSV)
+    image = image[:,:,1]
     
     #Flip image
-    if flip:
-        #image = np.asarray(image)[:,::-1,:]
+    if flip:        
         image = cv2.flip(image, 1)
     
     return image
@@ -58,12 +51,20 @@ def telemetry(sid, data):
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
         image_array = np.asarray(image)
-        image_array = load_image(image_array)
-        #print (image_array.shape)        
+        image_array = [load_image(image_array)]
+        image_array = np.array(image_array).reshape(64, 200, 1)
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
-        #steering_angle = float(model.predict(np.reshape(image_array, (1, 200, 64, 3)), batch_size=1))
-        throttle = 0.2
-        print(steering_angle, throttle)
+        
+        #Some custom throttle tuning
+        speed = float(speed)
+        if speed > 25.0:
+            throttle = 0.2
+        elif speed > 18.0 and speed <= 25.0:
+            throttle = 0.4
+        else:
+            throttle = 0.5
+            
+        print(steering_angle, throttle, speed)        
         send_control(steering_angle, throttle)
 
         # save frame
